@@ -1,9 +1,10 @@
 import express from "express";
 import "dotenv/config";
-const app = express();
-const PORT = 8000;
-
 import { MongoClient } from "mongodb";
+import cors from "cors";
+const app = express();
+app.use(cors());
+const PORT = 8000;
 
 const client = new MongoClient(process.env.MONGO_URL);
 
@@ -23,7 +24,12 @@ app.get("/", (req, res) => {
   res.send({ message: "server is runing" });
 });
 
-// http://localhost:8000
+app.post("/create-event", async (req, res) => {
+  console.log("api is working");
+  res.send({ message: "event created suscessfully" });
+});
+
+// http://localhost:8000/create-event
 app.listen(PORT, () => {
   console.log(`server port${PORT}`);
 });
