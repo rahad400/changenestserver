@@ -1,6 +1,6 @@
 import express from "express";
 import "dotenv/config";
-import { MongoClient } from "mongodb";
+import { MongoClient, ObjectId } from "mongodb";
 
 import cors from "cors";
 const app = express();
@@ -37,10 +37,16 @@ app.get("/upcoming-events", async (req, res) => {
   res.send(result);
 });
 
+app.get('/details-event/:id',async (req,res) =>{
+  const {id} = req.params;
+  const result = await createEventCollection.findOne({ _id: new ObjectId(id) });
+  res.send(result);
+});
+
 app.get("/", (req, res) => {
   res.send({ message: "server is runing" });
 });
-// http://localhost:8000/create-event
+// http://localhost:8000/event
 app.listen(PORT, () => {
   console.log(`server port${PORT}`);
 });
