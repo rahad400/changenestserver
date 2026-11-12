@@ -89,6 +89,41 @@ app.get("/my-events", async (req, res) => {
   res.json(result);
 });
 
+app.delete("/detele-event/:id", async (req, res) => {
+  const secret = req.headers["x-internal-api-secret"];
+
+  if (
+    !process.env.INTERNAL_API_SECRET ||
+    secret !== process.env.INTERNAL_API_SECRET
+  ) {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+
+  const { id } = req.params;
+  const { createdBy } = req.query;
+
+  if (!ObjectId.isValid(id) || !createdBy) {
+    return res.status(400).json({
+      message: "Invalid event ID or user ID",
+    });
+  }
+
+  const result = await createEventCollection.deleteOne({
+    _id: new ObjectId(id),
+    createdBy: createdBy,
+  });
+
+  if (result.deletedCount === 0) {
+    return res.status(404).json({
+      message: "Event not found",
+    });
+  }
+
+  res.json({
+    message: "Event deleted successfully",
+  });
+});
+
 app.get("/", (req, res) => {
   res.json({ message: "server is runing" });
 });
