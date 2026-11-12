@@ -43,11 +43,11 @@ app.get("/details-event/:id", async (req, res) => {
   res.send(result);
 });
 
-app.post("my-events", async (req, res) => {
+app.post("/my-events", async (req, res) => {
   const secret = req.headers["x-internal-api-secret"];
 
   if (
-    !porcess.env.INTERNAL_API_SECRET ||
+    !process.env.INTERNAL_API_SECRET ||
     secret !== process.env.INTERNAL_API_SECRET
   ) {
     return res.status(403).json({ message: "Unauthorized" });
@@ -65,12 +65,32 @@ app.post("my-events", async (req, res) => {
     createdBy,
   });
 
-  res.send(result);
-  // res.send('my is there events');
+  res.json({
+    message: "Event created successfully",
+    insertedId: result.insertedId,
+  });
+});
+
+app.get("/my-events", async (req, res) => {
+  const secret = req.headers["x-internal-api-secret"];
+  if (
+    !process.env.INTERNAL_API_SECRET ||
+    secret !== process.env.INTERNAL_API_SECRET
+  ) {
+    return res.status(403).json({ message: "Unauthorized" });
+  }
+  const { createdBy } = req.query;
+  if (!createdBy) {
+    return res.status(400).json({
+      message: "User ID is required",
+    });
+  }
+  const result = await createEventCollection.find({ createdBy }).toArray();
+  res.json(result);
 });
 
 app.get("/", (req, res) => {
-  res.send({ message: "server is runing" });
+  res.json({ message: "server is runing" });
 });
 // http://localhost:8000/event
 app.listen(PORT, () => {
