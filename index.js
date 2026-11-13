@@ -10,6 +10,10 @@ app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 const PORT = 8000;
 
+if (!process.env.MONGO_URL) {
+  throw new Error("MONGO_URL is missing in your environment.");
+}
+
 const client = new MongoClient(process.env.MONGO_URL);
 
 export async function connectToMongoDB() {
@@ -19,13 +23,16 @@ export async function connectToMongoDB() {
     return client;
   } catch (err) {
     console.dir(err);
+    return null;
   }
 }
 
 const changeClient = await connectToMongoDB();
 
 if (!changeClient) {
-  throw new Error("MongoDB connection failed. Check MONGO_URL in your environment.");
+  throw new Error(
+    "MongoDB connection failed. Check MONGO_URL in your environment.",
+  );
 }
 
 const db = changeClient.db("ChangeNest");
@@ -41,6 +48,10 @@ try {
   console.error("Join event index create failed:", error);
 }
 
+const jwks = createRemoteJWKSet(
+  new URL(`${process.env.JWKS_URL || "http://localhost:3000"}/api/auth/jwks`),
+);
+
 const verifyToken = async (req, res, next) => {
   const authorHeader = req.headers.authorization;
 
@@ -55,12 +66,8 @@ const verifyToken = async (req, res, next) => {
   }
 
   try {
-    const JWKS =  createRemoteJWKSet(
-      new URL("http://localhost:3000/api/auth/jwks"),
-    );
-    const { payload } = await jwtVerify(token, JWKS);
+    const { payload } = await jwtVerify(token, jwks);
     req.user = payload;
-    console.log(payload)
     next();
   } catch (error) {
     console.error("JWT verification failed:", error);
@@ -120,26 +127,28 @@ app.post("/join-event/:id", verifyToken, async (req, res) => {
 
 app.get("/join-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
-  const { userId } = req.query;
+  const userId = req.user?.sub;
 
   if (!ObjectId.isValid(id)) {
     return res.status(400).json({ message: "Invalid event ID" });
   }
 
+  if (typeof userId !== "string" || !userId.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
   const [count, joinedEvent] = await Promise.all([
     joinEventCollection.countDocuments({ eventId: id }),
-    typeof userId === "string" && userId.trim()
-      ? joinEventCollection.findOne({ eventId: id, userId })
-      : null,
+    joinEventCollection.findOne({ eventId: id, userId }),
   ]);
 
   res.json({ joined: Boolean(joinedEvent), count });
 });
 
 app.get("/my-joined-events", verifyToken, async (req, res) => {
-  const { userId } = req.query;
+  const userId = req.user?.sub;
   if (typeof userId !== "string" || !userId.trim()) {
-    return res.status(400).json({ message: "User ID is required" });
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   const joins = await joinEventCollection
@@ -196,15 +205,17 @@ app.delete("/leave-event/:id", verifyToken, async (req, res) => {
 });
 
 app.post("/my-events", verifyToken, async (req, res) => {
-  const { createdBy, ...eventData } = req.body;
+  const createdBy = req.user?.sub;
+  const eventData = req.body;
 
-  if (!createdBy) {
-    return res.status(400).json({
-      message: "User ID is required",
-    });
+  if (typeof createdBy !== "string" || !createdBy.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
+
+  const { _id, createdBy: _submittedCreatedBy, ...safeEventData } = eventData;
+
   const result = await createEventCollection.insertOne({
-    ...eventData,
+    ...safeEventData,
     createdBy,
   });
 
@@ -226,7 +237,7 @@ app.get("/my-events", verifyToken, async (req, res) => {
 app.put("/my-events/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
   const createdBy = req.user?.sub;
-  const { createdBy: _submittedCreatedBy, _id, ...eventData } = req.body;
+  const { _id, createdBy: _submittedCreatedBy, ...eventData } = req.body;
 
   if (typeof createdBy !== "string" || !createdBy.trim()) {
     return res.status(401).json({ message: "Unauthorized" });
@@ -250,11 +261,15 @@ app.put("/my-events/:id", verifyToken, async (req, res) => {
 
 app.delete("/delete-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
-  const { createdBy } = req.query;
+  const createdBy = req.user?.sub;
 
-  if (!ObjectId.isValid(id) || !createdBy) {
+  if (typeof createdBy !== "string" || !createdBy.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  if (!ObjectId.isValid(id)) {
     return res.status(400).json({
-      message: "Invalid event ID or user ID",
+      message: "Invalid event ID",
     });
   }
 
@@ -281,3 +296,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`server port${PORT}`);
 });
+
+export default app
