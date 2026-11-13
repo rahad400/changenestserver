@@ -36,33 +36,35 @@ try {
   console.error("Join event index create failed:", error);
 }
 
-app.post("/create-event", async (req, res) => {
+
+const verifyToken = (req,res,next) => {
+  const secret = req.headers["x-internal-api-secret"];
+
+  if(!process.env.INTERNAL_API_SECRET || secret !== process.env.INTERNAL_API_SECRET){
+    return res.status(403).json({ message: "Unauthorized" });
+}
+next();
+}
+
+app.post("/create-event",verifyToken, async (req, res) => {
   const event = req.body;
   const result = await createEventCollection.insertOne(event);
   console.log(result);
   res.send(result);
 });
 
-app.get("/upcoming-events", async (req, res) => {
+app.get("/upcoming-events",  async (req, res) => {
   const result = await createEventCollection.find().toArray();
   res.send(result);
 });
 
-app.get("/details-event/:id", async (req, res) => {
+app.get("/details-event/:id",  async (req, res) => {
   const { id } = req.params;
   const result = await createEventCollection.findOne({ _id: new ObjectId(id) });
   res.send(result);
 });
 
-app.post("/join-event/:id", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
+app.post("/join-event/:id", verifyToken, async (req, res) => {
 
   const { id } = req.params;
   const { userId } = req.body;
@@ -95,16 +97,7 @@ app.post("/join-event/:id", async (req, res) => {
   res.json({ joined: true, count });
 });
 
-app.get("/join-event/:id", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
-
+app.get("/join-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
   const { userId } = req.query;
 
@@ -122,18 +115,8 @@ app.get("/join-event/:id", async (req, res) => {
   res.json({ joined: Boolean(joinedEvent), count });
 });
 
-app.get("/my-joined-events", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
-
+app.get("/my-joined-events", verifyToken, async (req, res) => {
   const { userId } = req.query;
-
   if (typeof userId !== "string" || !userId.trim()) {
     return res.status(400).json({ message: "User ID is required" });
   }
@@ -167,16 +150,7 @@ app.get("/my-joined-events", async (req, res) => {
   );
 });
 
-app.delete("/leave-event/:id", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
-
+app.delete("/leave-event/:id",verifyToken, async (req, res) => {
   const { id } = req.params;
   const { userId } = req.query;
 
@@ -200,16 +174,7 @@ app.delete("/leave-event/:id", async (req, res) => {
   res.json({ message: "Left event successfully" });
 });
 
-app.post("/my-events", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
-
+app.post("/my-events", verifyToken, async (req, res) => {
   const { createdBy, ...eventData } = req.body;
 
   if (!createdBy) {
@@ -228,14 +193,7 @@ app.post("/my-events", async (req, res) => {
   });
 });
 
-app.get("/my-events", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
+app.get("/my-events", verifyToken, async (req, res) => {
   const { createdBy } = req.query;
   if (!createdBy) {
     return res.status(400).json({
@@ -246,16 +204,8 @@ app.get("/my-events", async (req, res) => {
   res.json(result);
 });
 
-app.put("/my-events/:id", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
-
+app.put("/my-events/:id", verifyToken, async (req, res) => {
+  
   const { id } = req.params;
   const { createdBy, _id, ...eventData } = req.body;
 
@@ -279,16 +229,7 @@ app.put("/my-events/:id", async (req, res) => {
   res.json({ message: "Event updated successfully" });
 });
 
-app.delete("/delete-event/:id", async (req, res) => {
-  const secret = req.headers["x-internal-api-secret"];
-
-  if (
-    !process.env.INTERNAL_API_SECRET ||
-    secret !== process.env.INTERNAL_API_SECRET
-  ) {
-    return res.status(403).json({ message: "Unauthorized" });
-  }
-
+app.delete("/delete-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
   const { createdBy } = req.query;
 
@@ -299,6 +240,7 @@ app.delete("/delete-event/:id", async (req, res) => {
   }
 
   const result = await createEventCollection.deleteOne({
+    _id:  ObjectId.isValid(id),
     _id: new ObjectId(id),
     createdBy: createdBy,
   });
