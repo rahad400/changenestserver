@@ -3,6 +3,7 @@ import "dotenv/config";
 import { MongoClient, ObjectId } from "mongodb";
 
 import cors from "cors";
+import { createRemoteJWKSet, jwtVerify } from "jose";
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
@@ -22,10 +23,14 @@ export async function connectToMongoDB() {
 }
 
 const changeClient = await connectToMongoDB();
+
+if (!changeClient) {
+  throw new Error("MongoDB connection failed. Check MONGO_URL in your environment.");
+}
+
 const db = changeClient.db("ChangeNest");
 const createEventCollection = db.collection("create-events");
 const joinEventCollection = db.collection("join-events");
-
 
 try {
   await joinEventCollection.createIndex(
@@ -36,44 +41,56 @@ try {
   console.error("Join event index create failed:", error);
 }
 
+const verifyToken = async (req, res, next) => {
+  const authorHeader = req.headers.authorization;
 
-const verifyToken = (req,res,next) => {
-  const secret = req.headers["x-internal-api-secret"];
+  if (!authorHeader || !authorHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
 
-  if(!process.env.INTERNAL_API_SECRET || secret !== process.env.INTERNAL_API_SECRET){
-    return res.status(403).json({ message: "Unauthorized" });
-}
-next();
-}
+  const token = authorHeader.split(" ")[1];
 
-app.post("/create-event",verifyToken, async (req, res) => {
+  if (!token) {
+    return res.status(401).json({ message: "Token is missing" });
+  }
+
+  try {
+    const JWKS =  createRemoteJWKSet(
+      new URL("http://localhost:3000/api/auth/jwks"),
+    );
+    const { payload } = await jwtVerify(token, JWKS);
+    req.user = payload;
+    console.log(payload)
+    next();
+  } catch (error) {
+    console.error("JWT verification failed:", error);
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
+};
+
+app.post("/create-event", verifyToken, async (req, res) => {
   const event = req.body;
   const result = await createEventCollection.insertOne(event);
   console.log(result);
   res.send(result);
 });
 
-app.get("/upcoming-events",  async (req, res) => {
+app.get("/upcoming-events", async (req, res) => {
   const result = await createEventCollection.find().toArray();
   res.send(result);
 });
 
-app.get("/details-event/:id",  async (req, res) => {
+app.get("/details-event/:id", async (req, res) => {
   const { id } = req.params;
   const result = await createEventCollection.findOne({ _id: new ObjectId(id) });
   res.send(result);
 });
 
 app.post("/join-event/:id", verifyToken, async (req, res) => {
-
   const { id } = req.params;
   const { userId } = req.body;
 
-  if (
-    !ObjectId.isValid(id) ||
-    typeof userId !== "string" ||
-    !userId.trim()
-  ) {
+  if (!ObjectId.isValid(id) || typeof userId !== "string" || !userId.trim()) {
     return res.status(400).json({ message: "Invalid event ID or user ID" });
   }
 
@@ -150,15 +167,11 @@ app.get("/my-joined-events", verifyToken, async (req, res) => {
   );
 });
 
-app.delete("/leave-event/:id",verifyToken, async (req, res) => {
+app.delete("/leave-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
   const { userId } = req.query;
 
-  if (
-    !ObjectId.isValid(id) ||
-    typeof userId !== "string" ||
-    !userId.trim()
-  ) {
+  if (!ObjectId.isValid(id) || typeof userId !== "string" || !userId.trim()) {
     return res.status(400).json({ message: "Invalid event ID or user ID" });
   }
 
@@ -205,7 +218,6 @@ app.get("/my-events", verifyToken, async (req, res) => {
 });
 
 app.put("/my-events/:id", verifyToken, async (req, res) => {
-  
   const { id } = req.params;
   const { createdBy, _id, ...eventData } = req.body;
 
@@ -240,9 +252,8 @@ app.delete("/delete-event/:id", verifyToken, async (req, res) => {
   }
 
   const result = await createEventCollection.deleteOne({
-    _id:  ObjectId.isValid(id),
     _id: new ObjectId(id),
-    createdBy: createdBy,
+    createdBy,
   });
 
   if (result.deletedCount === 0) {
@@ -255,8 +266,6 @@ app.delete("/delete-event/:id", verifyToken, async (req, res) => {
     message: "Event deleted successfully",
   });
 });
-
-
 
 app.get("/", (req, res) => {
   res.json({ message: "server is runing" });
