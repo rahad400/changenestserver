@@ -88,10 +88,14 @@ app.get("/details-event/:id", async (req, res) => {
 
 app.post("/join-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
-  const { userId } = req.body;
+  const userId = req.user?.sub;
 
-  if (!ObjectId.isValid(id) || typeof userId !== "string" || !userId.trim()) {
-    return res.status(400).json({ message: "Invalid event ID or user ID" });
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid event ID" });
+  }
+
+  if (typeof userId !== "string" || !userId.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   const event = await createEventCollection.findOne(
@@ -169,10 +173,14 @@ app.get("/my-joined-events", verifyToken, async (req, res) => {
 
 app.delete("/leave-event/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
-  const { userId } = req.query;
+  const userId = req.user?.sub;
 
-  if (!ObjectId.isValid(id) || typeof userId !== "string" || !userId.trim()) {
-    return res.status(400).json({ message: "Invalid event ID or user ID" });
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid event ID" });
+  }
+
+  if (typeof userId !== "string" || !userId.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   const result = await joinEventCollection.deleteOne({
@@ -207,11 +215,9 @@ app.post("/my-events", verifyToken, async (req, res) => {
 });
 
 app.get("/my-events", verifyToken, async (req, res) => {
-  const { createdBy } = req.query;
-  if (!createdBy) {
-    return res.status(400).json({
-      message: "User ID is required",
-    });
+  const createdBy = req.user?.sub;
+  if (typeof createdBy !== "string" || !createdBy.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
   const result = await createEventCollection.find({ createdBy }).toArray();
   res.json(result);
@@ -219,10 +225,11 @@ app.get("/my-events", verifyToken, async (req, res) => {
 
 app.put("/my-events/:id", verifyToken, async (req, res) => {
   const { id } = req.params;
-  const { createdBy, _id, ...eventData } = req.body;
+  const createdBy = req.user?.sub;
+  const { createdBy: _submittedCreatedBy, _id, ...eventData } = req.body;
 
-  if (!createdBy) {
-    return res.status(400).json({ message: "User ID is required" });
+  if (typeof createdBy !== "string" || !createdBy.trim()) {
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
   if (!ObjectId.isValid(id)) {
